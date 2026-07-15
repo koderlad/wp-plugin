@@ -2,10 +2,12 @@
  *
  * Handles:
  *  - Opening the booking modal when a "Join Now" button is clicked, populating it
- *    with the chosen departure's date, price and remaining seats.
- *  - Closing on backdrop click, close button, or Escape key — resetting the form.
- *  - Submitting the booking via AJAX and updating the corresponding departure
- *    card in place so the next viewer sees accurate availability without a reload.
+ *    with the chosen departure's date, price, and available seats.
+ *  - Enforcing the "Number of Travelers" cap against the remaining seats.
+ *  - Closing on backdrop click, close button, or Escape — resetting the form.
+ *  - Submitting the booking via AJAX and, on success, closing the modal and
+ *    surfacing the confirmation as a toast; updating the departure card in place
+ *    so the next viewer sees accurate availability without a reload.
  */
 (function () {
 	'use strict';
@@ -21,25 +23,30 @@
 		var departureInput  = modal.querySelector('input[data-tp-input="departure_id"]');
 		var summaryDate     = modal.querySelector('[data-tp-summary="date"]');
 		var summaryPrice    = modal.querySelector('[data-tp-summary="price"]');
+		var summaryRemain   = modal.querySelector('[data-tp-summary="remaining"]');
 		var currentCard     = null;
+		var currentRemaining = 0;
+		var toastContainer  = createToastContainer();
 
 		function openModalFor(button) {
 			currentCard = button.closest('.travel-pack-departure-card');
 
 			var remaining = parseInt(button.dataset.remaining, 10);
 			if (isNaN(remaining) || remaining < 0) { remaining = 0; }
+			currentRemaining = remaining;
 
 			departureInput.value = button.dataset.departureId || '';
 			summaryDate.textContent = button.dataset.date || '—';
 			summaryPrice.textContent = button.dataset.price ? button.dataset.price : 'Contact us';
+			summaryRemain.textContent = remaining + (remaining === 1 ? ' seat' : ' seats');
 
-			// Cap the travelers input at the number remaining.
+			// Cap the travelers input at the remaining seats. Also enforced on input.
 			if (remaining > 0) {
 				seatsInput.max = remaining;
 			} else {
 				seatsInput.removeAttribute('max');
 			}
-			seatsInput.value = 1;
+			seatsInput.value = remaining > 0 ? 1 : 0;
 
 			modal.hidden = false;
 			modal.setAttribute('aria-hidden', 'false');
@@ -64,6 +71,7 @@
 				submit.textContent = submit.dataset.originalText;
 			}
 			currentCard = null;
+			currentRemaining = 0;
 		}
 
 		// Wire every Join Now button on the page.
@@ -84,10 +92,32 @@
 			}
 		});
 
+		// Enforce the travelers cap while the user types / uses the spinner.
+		seatsInput.addEventListener('input', clampTravelers);
+		seatsInput.addEventListener('change', clampTravelers);
+
+		function clampTravelers() {
+			var value = parseInt(seatsInput.value, 10);
+			if (isNaN(value) || value < 1) {
+				seatsInput.value = currentRemaining > 0 ? 1 : 0;
+				return;
+			}
+			if (currentRemaining > 0 && value > currentRemaining) {
+				seatsInput.value = currentRemaining;
+			}
+		}
+
 		form.addEventListener('submit', function (e) {
 			e.preventDefault();
 			status.className = 'travel-pack-booking__status';
 			status.textContent = '';
+
+			// Final client-side cap check (server also enforces this atomically).
+			if (currentRemaining > 0 && parseInt(seatsInput.value, 10) > currentRemaining) {
+				status.className = 'travel-pack-booking__status is-error';
+				status.textContent = 'Only ' + currentRemaining + ' seat' + (currentRemaining === 1 ? ' is' : 's are') + ' left for this departure.';
+				return;
+			}
 
 			var data = new FormData(form);
 			data.append('action', 'travel_pack_book');
@@ -108,14 +138,27 @@
 				submit.textContent = submit.dataset.originalText;
 
 				if (res.body && res.body.success) {
-					status.className = 'travel-pack-booking__status is-success';
-					status.textContent = res.body.data.message;
-					updateCard(currentCard, res.body.data.remaining, res.body.data.is_full);
+					// Snapshot the card before closeModal clears currentCard, then update it.
+					var cardRef = currentCard;
+					var message = res.body.data.message;
+					updateCard(cardRef, res.body.data.remaining, res.body.data.is_full);
+					closeModal();
+					showToast('success', 'Booking Confirmed', message);
 				} else {
 					var msg = (res.body && res.body.data && res.body.data.message)
 						|| 'Something went wrong. Please try again.';
 					status.className = 'travel-pack-booking__status is-error';
 					status.textContent = msg;
+					// Server rejected because someone else grabbed seats first — reflect that
+					// live count so the user can retry with a valid quantity.
+					if (res.body && res.body.data && typeof res.body.data.remaining === 'number') {
+						currentRemaining = res.body.data.remaining;
+						summaryRemain.textContent = currentRemaining + (currentRemaining === 1 ? ' seat' : ' seats');
+						if (currentRemaining > 0) {
+							seatsInput.max = currentRemaining;
+							clampTravelers();
+						}
+					}
 				}
 			})
 			.catch(function () {
@@ -163,6 +206,53 @@
 					cta.dataset.remaining = remaining;
 				}
 			}
+		}
+
+		/* --- Toast --- */
+		function createToastContainer() {
+			var el = document.createElement('div');
+			el.className = 'travel-pack-toasts';
+			el.setAttribute('role', 'region');
+			el.setAttribute('aria-label', 'Notifications');
+			document.body.appendChild(el);
+			return el;
+		}
+
+		function showToast(kind, title, message) {
+			var toast = document.createElement('div');
+			toast.className = 'travel-pack-toast travel-pack-toast--' + kind;
+			toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+
+			var titleEl = document.createElement('span');
+			titleEl.className = 'travel-pack-toast__title';
+			titleEl.textContent = title;
+
+			var msgEl = document.createElement('span');
+			msgEl.className = 'travel-pack-toast__message';
+			msgEl.textContent = message;
+
+			var close = document.createElement('button');
+			close.type = 'button';
+			close.className = 'travel-pack-toast__close';
+			close.setAttribute('aria-label', 'Dismiss');
+			close.textContent = '×';
+
+			toast.appendChild(titleEl);
+			toast.appendChild(msgEl);
+			toast.appendChild(close);
+			toastContainer.appendChild(toast);
+
+			var dismissed = false;
+			function dismiss() {
+				if (dismissed) { return; }
+				dismissed = true;
+				toast.classList.add('is-leaving');
+				window.setTimeout(function () {
+					if (toast.parentNode) { toast.parentNode.removeChild(toast); }
+				}, 200);
+			}
+			close.addEventListener('click', dismiss);
+			window.setTimeout(dismiss, 6000);
 		}
 	});
 })();

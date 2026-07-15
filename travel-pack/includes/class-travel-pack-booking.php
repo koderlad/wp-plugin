@@ -163,9 +163,13 @@ class Travel_Pack_Booking {
 						<span class="travel-pack-modal__summary-label"><?php esc_html_e( 'Price per person', 'travel-pack' ); ?></span>
 						<strong class="travel-pack-modal__summary-value" data-tp-summary="price">—</strong>
 					</div>
+					<div class="travel-pack-modal__summary-item">
+						<span class="travel-pack-modal__summary-label"><?php esc_html_e( 'Seats Available', 'travel-pack' ); ?></span>
+						<strong class="travel-pack-modal__summary-value" data-tp-summary="remaining">—</strong>
+					</div>
 				</div>
 
-				<form class="travel-pack-booking__form" method="post" novalidate>
+				<form class="travel-pack-booking__form" method="post">
 					<?php wp_nonce_field( 'travel_pack_book_' . $post_id, 'travel_pack_booking_nonce' ); ?>
 					<input type="hidden" name="package_id" value="<?php echo esc_attr( $post_id ); ?>" />
 					<input type="hidden" name="departure_id" value="" data-tp-input="departure_id" />
