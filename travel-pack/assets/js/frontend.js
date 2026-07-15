@@ -1,35 +1,88 @@
 /* Travel Pack — Frontend JS
- * Submits the booking form via AJAX and updates the seat count in the dropdown.
+ *
+ * Handles:
+ *  - Opening the booking modal when a "Join Now" button is clicked, populating it
+ *    with the chosen departure's date, price and remaining seats.
+ *  - Closing on backdrop click, close button, or Escape key — resetting the form.
+ *  - Submitting the booking via AJAX and updating the corresponding departure
+ *    card in place so the next viewer sees accurate availability without a reload.
  */
 (function () {
 	'use strict';
 
 	document.addEventListener('DOMContentLoaded', function () {
-		var form = document.querySelector('.travel-pack-booking__form');
-		if (!form) { return; }
+		var modal = document.getElementById('travel-pack-modal');
+		if (!modal) { return; }
 
-		var status = form.querySelector('.travel-pack-booking__status');
-		var submit = form.querySelector('.travel-pack-booking__submit');
-		var seatsInput = form.querySelector('input[name="seats"]');
-		var departureSelect = form.querySelector('select[name="departure_id"]');
+		var form            = modal.querySelector('.travel-pack-booking__form');
+		var status          = modal.querySelector('.travel-pack-booking__status');
+		var submit          = modal.querySelector('.travel-pack-booking__submit');
+		var seatsInput      = modal.querySelector('input[data-tp-input="seats"]');
+		var departureInput  = modal.querySelector('input[data-tp-input="departure_id"]');
+		var summaryDate     = modal.querySelector('[data-tp-summary="date"]');
+		var summaryPrice    = modal.querySelector('[data-tp-summary="price"]');
+		var currentCard     = null;
 
-		// Cap the seats input to what's available for the selected departure.
-		function syncSeatsMax() {
-			var opt = departureSelect.options[departureSelect.selectedIndex];
-			if (!opt || !opt.value) {
-				seatsInput.removeAttribute('max');
-				return;
-			}
-			var remaining = parseInt(opt.dataset.remaining, 10);
-			if (!isNaN(remaining) && remaining > 0) {
+		function openModalFor(button) {
+			currentCard = button.closest('.travel-pack-departure-card');
+
+			var remaining = parseInt(button.dataset.remaining, 10);
+			if (isNaN(remaining) || remaining < 0) { remaining = 0; }
+
+			departureInput.value = button.dataset.departureId || '';
+			summaryDate.textContent = button.dataset.date || '—';
+			summaryPrice.textContent = button.dataset.price ? button.dataset.price : 'Contact us';
+
+			// Cap the travelers input at the number remaining.
+			if (remaining > 0) {
 				seatsInput.max = remaining;
-				if (parseInt(seatsInput.value, 10) > remaining) {
-					seatsInput.value = remaining;
-				}
+			} else {
+				seatsInput.removeAttribute('max');
+			}
+			seatsInput.value = 1;
+
+			modal.hidden = false;
+			modal.setAttribute('aria-hidden', 'false');
+			document.body.classList.add('travel-pack-modal-open');
+
+			var focusTarget = form.querySelector('#tp_name');
+			if (focusTarget) {
+				window.setTimeout(function () { focusTarget.focus(); }, 30);
 			}
 		}
-		departureSelect.addEventListener('change', syncSeatsMax);
-		syncSeatsMax();
+
+		function closeModal() {
+			modal.hidden = true;
+			modal.setAttribute('aria-hidden', 'true');
+			document.body.classList.remove('travel-pack-modal-open');
+			// Reset every field back to defaults so the next opening starts fresh.
+			form.reset();
+			status.className = 'travel-pack-booking__status';
+			status.textContent = '';
+			submit.disabled = false;
+			if (submit.dataset.originalText) {
+				submit.textContent = submit.dataset.originalText;
+			}
+			currentCard = null;
+		}
+
+		// Wire every Join Now button on the page.
+		document.querySelectorAll('[data-tp-open]').forEach(function (btn) {
+			if (btn.disabled) { return; }
+			btn.addEventListener('click', function () { openModalFor(btn); });
+		});
+
+		// Close via backdrop or × button (any element with data-tp-close).
+		modal.querySelectorAll('[data-tp-close]').forEach(function (el) {
+			el.addEventListener('click', closeModal);
+		});
+
+		// Close on Escape.
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape' && !modal.hidden) {
+				closeModal();
+			}
+		});
 
 		form.addEventListener('submit', function (e) {
 			e.preventDefault();
@@ -57,14 +110,7 @@
 				if (res.body && res.body.success) {
 					status.className = 'travel-pack-booking__status is-success';
 					status.textContent = res.body.data.message;
-					// Reduce the remaining seats shown in the option label and dataset.
-					var opt = departureSelect.options[departureSelect.selectedIndex];
-					if (opt) {
-						opt.dataset.remaining = res.body.data.remaining;
-						updateOptionLabel(opt, res.body.data.remaining, res.body.data.is_full);
-					}
-					form.reset();
-					syncSeatsMax();
+					updateCard(currentCard, res.body.data.remaining, res.body.data.is_full);
 				} else {
 					var msg = (res.body && res.body.data && res.body.data.message)
 						|| 'Something went wrong. Please try again.';
@@ -80,14 +126,42 @@
 			});
 		});
 
-		function updateOptionLabel(opt, remaining, isFull) {
-			var datePart = opt.textContent.split(' — ')[0];
+		/**
+		 * Updates the departure card the user just booked so the availability badge,
+		 * Join Now button, and any relevant state reflects the new capacity without
+		 * a page reload.
+		 */
+		function updateCard(card, remaining, isFull) {
+			if (!card) { return; }
+
+			var cta   = card.querySelector('.travel-pack-departure-card__cta');
+			var badge = card.querySelector('.travel-pack-avail');
+
+			card.classList.remove('travel-pack-departure-card--ok', 'travel-pack-departure-card--low', 'travel-pack-departure-card--full');
+			if (badge) {
+				badge.classList.remove('travel-pack-avail--ok', 'travel-pack-avail--low', 'travel-pack-avail--full');
+			}
+
 			if (isFull) {
-				opt.textContent = datePart + ' — Fully booked';
-				opt.disabled = true;
+				card.classList.add('travel-pack-departure-card--full');
+				if (badge) {
+					badge.classList.add('travel-pack-avail--full');
+					badge.textContent = 'Full';
+				}
+				if (cta) {
+					cta.disabled = true;
+					cta.textContent = 'Sold Out';
+				}
 			} else {
-				var word = remaining === 1 ? 'seat left' : 'seats left';
-				opt.textContent = datePart + ' — ' + remaining + ' ' + word;
+				var state = remaining <= 3 ? 'low' : 'ok';
+				card.classList.add('travel-pack-departure-card--' + state);
+				if (badge) {
+					badge.classList.add('travel-pack-avail--' + state);
+					badge.textContent = remaining + ' Left';
+				}
+				if (cta) {
+					cta.dataset.remaining = remaining;
+				}
 			}
 		}
 	});

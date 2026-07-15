@@ -56,7 +56,7 @@ while ( have_posts() ) :
 				<?php if ( get_the_excerpt() ) : ?>
 					<p class="travel-pack-single__excerpt"><?php echo esc_html( get_the_excerpt() ); ?></p>
 				<?php endif; ?>
-				<a href="#travel-pack-booking" class="travel-pack-single__cta"><?php esc_html_e( 'Book This Trip', 'travel-pack' ); ?></a>
+				<a href="#travel-pack-departures" class="travel-pack-single__cta"><?php esc_html_e( 'See Departures', 'travel-pack' ); ?></a>
 			</div>
 		</header>
 
@@ -79,78 +79,74 @@ while ( have_posts() ) :
 				<?php endforeach; ?>
 			</section>
 
-			<div class="travel-pack-single__layout">
-				<main class="travel-pack-single__main">
+			<div class="travel-pack-single__main">
 
-					<section class="travel-pack-section">
-						<h2><?php esc_html_e( 'Overview', 'travel-pack' ); ?></h2>
-						<div class="travel-pack-single__content">
-							<?php the_content(); ?>
-						</div>
-					</section>
-
-					<?php if ( ! empty( $itinerary ) ) : ?>
-						<section class="travel-pack-section travel-pack-itinerary-frontend">
-							<h2><?php esc_html_e( 'Itinerary', 'travel-pack' ); ?></h2>
-							<ol class="travel-pack-itinerary-frontend__list">
-								<?php foreach ( $itinerary as $item ) : ?>
-									<li>
-										<span class="travel-pack-itinerary-frontend__day"><?php echo esc_html( $item['label'] ); ?></span>
-										<span class="travel-pack-itinerary-frontend__text"><?php echo wp_kses_post( wpautop( $item['text'] ) ); ?></span>
-									</li>
-								<?php endforeach; ?>
-							</ol>
-						</section>
-					<?php endif; ?>
-
-					<div class="travel-pack-two-col">
-						<?php if ( is_array( $included ) && ! empty( $included ) ) : ?>
-							<section class="travel-pack-section travel-pack-list travel-pack-list--included">
-								<h2><?php esc_html_e( 'What\'s Included', 'travel-pack' ); ?></h2>
-								<ul>
-									<?php foreach ( $included as $item ) : ?>
-										<li><?php echo wp_kses_post( $item ); ?></li>
-									<?php endforeach; ?>
-								</ul>
-							</section>
-						<?php endif; ?>
-
-						<?php if ( is_array( $not_incl ) && ! empty( $not_incl ) ) : ?>
-							<section class="travel-pack-section travel-pack-list travel-pack-list--excluded">
-								<h2><?php esc_html_e( 'What\'s Not Included', 'travel-pack' ); ?></h2>
-								<ul>
-									<?php foreach ( $not_incl as $item ) : ?>
-										<li><?php echo wp_kses_post( $item ); ?></li>
-									<?php endforeach; ?>
-								</ul>
-							</section>
-						<?php endif; ?>
+				<section class="travel-pack-section">
+					<h2><?php esc_html_e( 'Overview', 'travel-pack' ); ?></h2>
+					<div class="travel-pack-single__content">
+						<?php the_content(); ?>
 					</div>
+				</section>
 
-					<?php if ( is_array( $important ) && ! empty( $important ) ) : ?>
-						<section class="travel-pack-section travel-pack-notes">
-							<h2><?php esc_html_e( 'Important Notes', 'travel-pack' ); ?></h2>
+				<?php if ( ! empty( $itinerary ) ) : ?>
+					<section class="travel-pack-section travel-pack-itinerary-frontend">
+						<h2><?php esc_html_e( 'Itinerary', 'travel-pack' ); ?></h2>
+						<ol class="travel-pack-itinerary-frontend__list">
+							<?php foreach ( $itinerary as $item ) : ?>
+								<li>
+									<span class="travel-pack-itinerary-frontend__day"><?php echo esc_html( $item['label'] ); ?></span>
+									<span class="travel-pack-itinerary-frontend__text"><?php echo wp_kses_post( wpautop( $item['text'] ) ); ?></span>
+								</li>
+							<?php endforeach; ?>
+						</ol>
+					</section>
+				<?php endif; ?>
+
+				<div class="travel-pack-two-col">
+					<?php if ( is_array( $included ) && ! empty( $included ) ) : ?>
+						<section class="travel-pack-section travel-pack-list travel-pack-list--included">
+							<h2><?php esc_html_e( 'What\'s Included', 'travel-pack' ); ?></h2>
 							<ul>
-								<?php foreach ( $important as $item ) : ?>
+								<?php foreach ( $included as $item ) : ?>
 									<li><?php echo wp_kses_post( $item ); ?></li>
 								<?php endforeach; ?>
 							</ul>
 						</section>
 					<?php endif; ?>
 
-					<?php if ( $tags && ! is_wp_error( $tags ) ) : ?>
-						<div class="travel-pack-tags">
-							<?php foreach ( $tags as $tag ) : ?>
-								<a class="travel-pack-tag" href="<?php echo esc_url( get_term_link( $tag ) ); ?>">#<?php echo esc_html( $tag->name ); ?></a>
-							<?php endforeach; ?>
-						</div>
+					<?php if ( is_array( $not_incl ) && ! empty( $not_incl ) ) : ?>
+						<section class="travel-pack-section travel-pack-list travel-pack-list--excluded">
+							<h2><?php esc_html_e( 'What\'s Not Included', 'travel-pack' ); ?></h2>
+							<ul>
+								<?php foreach ( $not_incl as $item ) : ?>
+									<li><?php echo wp_kses_post( $item ); ?></li>
+								<?php endforeach; ?>
+							</ul>
+						</section>
 					<?php endif; ?>
+				</div>
 
-				</main>
+				<?php if ( is_array( $important ) && ! empty( $important ) ) : ?>
+					<section class="travel-pack-section travel-pack-notes">
+						<h2><?php esc_html_e( 'Important Notes', 'travel-pack' ); ?></h2>
+						<ul>
+							<?php foreach ( $important as $item ) : ?>
+								<li><?php echo wp_kses_post( $item ); ?></li>
+							<?php endforeach; ?>
+						</ul>
+					</section>
+				<?php endif; ?>
 
-				<aside class="travel-pack-single__aside">
-					<?php Travel_Pack_Booking::render_form( $post_id ); ?>
-				</aside>
+				<?php Travel_Pack_Booking::render_departures_and_modal( $post_id ); ?>
+
+				<?php if ( $tags && ! is_wp_error( $tags ) ) : ?>
+					<div class="travel-pack-tags">
+						<?php foreach ( $tags as $tag ) : ?>
+							<a class="travel-pack-tag" href="<?php echo esc_url( get_term_link( $tag ) ); ?>">#<?php echo esc_html( $tag->name ); ?></a>
+						<?php endforeach; ?>
+					</div>
+				<?php endif; ?>
+
 			</div>
 		</div>
 	</article>

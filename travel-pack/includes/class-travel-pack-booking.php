@@ -1,6 +1,6 @@
 <?php
 /**
- * Bookings: DB table, AJAX handler, and admin list screen.
+ * Bookings: DB table, AJAX handler, departures list, booking modal, and admin list screen.
  *
  * We use a dedicated table (not post meta) because bookings need atomic seat
  * decrement under concurrent load - a per-departure row lock is far easier to
@@ -16,7 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Travel_Pack_Booking {
 
 	const DB_VERSION_OPTION = 'travel_pack_db_version';
-	const DB_VERSION        = '1.0.0';
+	const DB_VERSION        = '1.1.0';
+
+	const ROOM_TYPES = array( 'Single', 'Double', 'Group' );
 
 	public static function init() {
 		// Guard against schema drift on already-installed sites where the activation hook was skipped.
@@ -43,15 +45,17 @@ class Travel_Pack_Booking {
 		$table   = self::table_name();
 		$charset = $wpdb->get_charset_collate();
 
+		// dbDelta will ADD new columns to an existing table (e.g. room_type on 1.0 -> 1.1
+		// upgrades) but will not drop columns removed from this schema. That is fine —
+		// stale columns cost nothing.
 		$sql = "CREATE TABLE {$table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			package_id BIGINT UNSIGNED NOT NULL,
 			departure_id VARCHAR(32) NOT NULL,
 			seats SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+			room_type VARCHAR(20) NOT NULL DEFAULT '',
 			customer_name VARCHAR(191) NOT NULL,
 			customer_email VARCHAR(191) NOT NULL,
-			customer_phone VARCHAR(64) NOT NULL DEFAULT '',
-			message TEXT NOT NULL,
 			status VARCHAR(20) NOT NULL DEFAULT 'confirmed',
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
@@ -66,88 +70,161 @@ class Travel_Pack_Booking {
 	}
 
 	/**
-	 * Renders the booking form. Called from the frontend template.
+	 * Renders the departures list + hidden booking modal into the single package template.
 	 */
-	public static function render_form( $post_id ) {
-		$departures = Travel_Pack_Departures::get_upcoming_with_availability( $post_id );
+	public static function render_departures_and_modal( $post_id ) {
+		self::render_departures_list( $post_id );
+		self::render_booking_modal( $post_id );
+	}
+
+	private static function render_departures_list( $post_id ) {
+		$departures    = Travel_Pack_Departures::get_upcoming_with_availability( $post_id );
+		$package_price = get_post_meta( $post_id, Travel_Pack_Metaboxes::META_PRICE, true );
 		?>
-		<div class="travel-pack-booking" id="travel-pack-booking">
-			<h2 class="travel-pack-booking__title"><?php esc_html_e( 'Book This Trip', 'travel-pack' ); ?></h2>
+		<section class="travel-pack-section travel-pack-departures-list" id="travel-pack-departures">
+			<h2><?php esc_html_e( 'Available Departures', 'travel-pack' ); ?></h2>
 
 			<?php if ( empty( $departures ) ) : ?>
-				<p class="travel-pack-booking__empty"><?php esc_html_e( 'No upcoming departures are open for booking. Please check back later.', 'travel-pack' ); ?></p>
+				<p class="travel-pack-departures-list__empty">
+					<?php esc_html_e( 'No upcoming departures are open for booking. Please check back later.', 'travel-pack' ); ?>
+				</p>
 			<?php else : ?>
-				<form class="travel-pack-booking__form" method="post">
-					<?php wp_nonce_field( 'travel_pack_book_' . $post_id, 'travel_pack_booking_nonce' ); ?>
-					<input type="hidden" name="package_id" value="<?php echo esc_attr( $post_id ); ?>" />
+				<ul class="travel-pack-departures-list__items">
+					<?php foreach ( $departures as $dep ) :
+						$price = ! empty( $dep['price'] ) ? $dep['price'] : $package_price;
+						$avail = self::availability_state( $dep );
+						?>
+						<li class="travel-pack-departure-card travel-pack-departure-card--<?php echo esc_attr( $avail['state'] ); ?>">
+							<div class="travel-pack-departure-card__date">
+								<span class="travel-pack-departure-card__weekday">
+									<?php echo esc_html( mysql2date( 'D', $dep['date'] ) ); ?>
+								</span>
+								<span class="travel-pack-departure-card__day">
+									<?php echo esc_html( mysql2date( 'j', $dep['date'] ) ); ?>
+								</span>
+								<span class="travel-pack-departure-card__monthyear">
+									<?php echo esc_html( mysql2date( 'M Y', $dep['date'] ) ); ?>
+								</span>
+							</div>
 
-					<div class="travel-pack-booking__field">
-						<label for="tp_departure"><?php esc_html_e( 'Departure Date', 'travel-pack' ); ?> <span class="required">*</span></label>
-						<select id="tp_departure" name="departure_id" required>
-							<option value=""><?php esc_html_e( '— Choose a date —', 'travel-pack' ); ?></option>
-							<?php foreach ( $departures as $dep ) : ?>
-								<option
-									value="<?php echo esc_attr( $dep['id'] ); ?>"
+							<div class="travel-pack-departure-card__meta">
+								<div class="travel-pack-departure-card__price">
+									<?php if ( '' !== trim( (string) $price ) ) : ?>
+										<span class="travel-pack-departure-card__price-label"><?php esc_html_e( 'From', 'travel-pack' ); ?></span>
+										<span class="travel-pack-departure-card__price-value"><?php echo esc_html( $price ); ?></span>
+										<span class="travel-pack-departure-card__price-unit"><?php esc_html_e( '/ person', 'travel-pack' ); ?></span>
+									<?php endif; ?>
+								</div>
+								<div class="travel-pack-departure-card__availability">
+									<span class="travel-pack-avail travel-pack-avail--<?php echo esc_attr( $avail['state'] ); ?>">
+										<?php echo esc_html( $avail['label'] ); ?>
+									</span>
+								</div>
+							</div>
+
+							<div class="travel-pack-departure-card__action">
+								<button
+									type="button"
+									class="travel-pack-departure-card__cta"
+									data-tp-open
+									data-departure-id="<?php echo esc_attr( $dep['id'] ); ?>"
+									data-date="<?php echo esc_attr( mysql2date( get_option( 'date_format' ), $dep['date'] ) ); ?>"
+									data-price="<?php echo esc_attr( $price ); ?>"
 									data-remaining="<?php echo esc_attr( $dep['remaining'] ); ?>"
 									<?php disabled( $dep['is_full'] ); ?>
 								>
-									<?php
-									echo esc_html( mysql2date( get_option( 'date_format' ), $dep['date'] ) );
-									if ( $dep['is_full'] ) {
-										echo ' — ' . esc_html__( 'Fully booked', 'travel-pack' );
-									} else {
-										echo ' — ' . esc_html(
-											sprintf(
-												/* translators: %d remaining seats */
-												_n( '%d seat left', '%d seats left', $dep['remaining'], 'travel-pack' ),
-												$dep['remaining']
-											)
-										);
-									}
-									?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-					</div>
+									<?php echo esc_html( $dep['is_full'] ? __( 'Sold Out', 'travel-pack' ) : __( 'Join Now', 'travel-pack' ) ); ?>
+								</button>
+							</div>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+		</section>
+		<?php
+	}
 
-					<div class="travel-pack-booking__row">
-						<div class="travel-pack-booking__field">
-							<label for="tp_seats"><?php esc_html_e( 'Number of People', 'travel-pack' ); ?> <span class="required">*</span></label>
-							<input type="number" id="tp_seats" name="seats" min="1" step="1" value="1" required />
-						</div>
-						<div class="travel-pack-booking__field">
-							<label for="tp_name"><?php esc_html_e( 'Full Name', 'travel-pack' ); ?> <span class="required">*</span></label>
-							<input type="text" id="tp_name" name="customer_name" required />
-						</div>
-					</div>
+	private static function render_booking_modal( $post_id ) {
+		?>
+		<div class="travel-pack-modal" id="travel-pack-modal" hidden aria-hidden="true">
+			<div class="travel-pack-modal__backdrop" data-tp-close></div>
+			<div class="travel-pack-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="travel-pack-modal-title">
+				<button type="button" class="travel-pack-modal__close" data-tp-close aria-label="<?php esc_attr_e( 'Close', 'travel-pack' ); ?>">×</button>
+				<h2 class="travel-pack-modal__title" id="travel-pack-modal-title">
+					<?php esc_html_e( 'Book Your Departure', 'travel-pack' ); ?>
+				</h2>
 
-					<div class="travel-pack-booking__row">
-						<div class="travel-pack-booking__field">
-							<label for="tp_email"><?php esc_html_e( 'Email', 'travel-pack' ); ?> <span class="required">*</span></label>
-							<input type="email" id="tp_email" name="customer_email" required />
-						</div>
-						<div class="travel-pack-booking__field">
-							<label for="tp_phone"><?php esc_html_e( 'Phone', 'travel-pack' ); ?></label>
-							<input type="tel" id="tp_phone" name="customer_phone" />
-						</div>
+				<div class="travel-pack-modal__summary">
+					<div class="travel-pack-modal__summary-item">
+						<span class="travel-pack-modal__summary-label"><?php esc_html_e( 'Departure Date', 'travel-pack' ); ?></span>
+						<strong class="travel-pack-modal__summary-value" data-tp-summary="date">—</strong>
+					</div>
+					<div class="travel-pack-modal__summary-item">
+						<span class="travel-pack-modal__summary-label"><?php esc_html_e( 'Price per person', 'travel-pack' ); ?></span>
+						<strong class="travel-pack-modal__summary-value" data-tp-summary="price">—</strong>
+					</div>
+				</div>
+
+				<form class="travel-pack-booking__form" method="post" novalidate>
+					<?php wp_nonce_field( 'travel_pack_book_' . $post_id, 'travel_pack_booking_nonce' ); ?>
+					<input type="hidden" name="package_id" value="<?php echo esc_attr( $post_id ); ?>" />
+					<input type="hidden" name="departure_id" value="" data-tp-input="departure_id" />
+
+					<div class="travel-pack-booking__field">
+						<label for="tp_name"><?php esc_html_e( 'Full Name', 'travel-pack' ); ?> <span class="required">*</span></label>
+						<input type="text" id="tp_name" name="customer_name" required />
 					</div>
 
 					<div class="travel-pack-booking__field">
-						<label for="tp_message"><?php esc_html_e( 'Special Requests', 'travel-pack' ); ?></label>
-						<textarea id="tp_message" name="message" rows="3"></textarea>
+						<label for="tp_email"><?php esc_html_e( 'Email Address', 'travel-pack' ); ?> <span class="required">*</span></label>
+						<input type="email" id="tp_email" name="customer_email" required />
+					</div>
+
+					<div class="travel-pack-booking__row">
+						<div class="travel-pack-booking__field">
+							<label for="tp_seats"><?php esc_html_e( 'Number of Travelers', 'travel-pack' ); ?> <span class="required">*</span></label>
+							<input type="number" id="tp_seats" name="seats" min="1" step="1" value="1" required data-tp-input="seats" />
+						</div>
+						<div class="travel-pack-booking__field">
+							<label for="tp_room"><?php esc_html_e( 'Room Type', 'travel-pack' ); ?> <span class="required">*</span></label>
+							<select id="tp_room" name="room_type" required>
+								<option value=""><?php esc_html_e( '— Select —', 'travel-pack' ); ?></option>
+								<?php foreach ( self::ROOM_TYPES as $room ) : ?>
+									<option value="<?php echo esc_attr( $room ); ?>"><?php echo esc_html( $room ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
 					</div>
 
 					<div class="travel-pack-booking__actions">
 						<button type="submit" class="travel-pack-booking__submit">
-							<?php esc_html_e( 'Book Now', 'travel-pack' ); ?>
+							<?php esc_html_e( 'Confirm Booking', 'travel-pack' ); ?>
 						</button>
 					</div>
 
 					<div class="travel-pack-booking__status" role="status" aria-live="polite"></div>
 				</form>
-			<?php endif; ?>
+			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Turns a departure's remaining/is_full into a display state for the frontend list.
+	 *
+	 * @return array{state:string,label:string}
+	 */
+	private static function availability_state( $dep ) {
+		if ( $dep['is_full'] ) {
+			return array( 'state' => 'full', 'label' => __( 'Full', 'travel-pack' ) );
+		}
+		$remaining = (int) $dep['remaining'];
+		$state     = $remaining <= 3 ? 'low' : 'ok';
+		return array(
+			'state' => $state,
+			/* translators: %d seats remaining */
+			'label' => sprintf( _n( '%d Left', '%d Left', $remaining, 'travel-pack' ), $remaining ),
+		);
 	}
 
 	public static function handle_ajax_book() {
@@ -163,16 +240,18 @@ class Travel_Pack_Booking {
 			wp_send_json_error( array( 'message' => __( 'Security check failed. Please reload the page and try again.', 'travel-pack' ) ), 400 );
 		}
 
-		$name    = isset( $_POST['customer_name'] ) ? sanitize_text_field( wp_unslash( $_POST['customer_name'] ) ) : '';
-		$email   = isset( $_POST['customer_email'] ) ? sanitize_email( wp_unslash( $_POST['customer_email'] ) ) : '';
-		$phone   = isset( $_POST['customer_phone'] ) ? sanitize_text_field( wp_unslash( $_POST['customer_phone'] ) ) : '';
-		$message = isset( $_POST['message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['message'] ) ) : '';
+		$name      = isset( $_POST['customer_name'] ) ? sanitize_text_field( wp_unslash( $_POST['customer_name'] ) ) : '';
+		$email     = isset( $_POST['customer_email'] ) ? sanitize_email( wp_unslash( $_POST['customer_email'] ) ) : '';
+		$room_type = isset( $_POST['room_type'] ) ? sanitize_text_field( wp_unslash( $_POST['room_type'] ) ) : '';
 
 		if ( '' === $name || '' === $email || ! is_email( $email ) ) {
 			wp_send_json_error( array( 'message' => __( 'Please provide your name and a valid email.', 'travel-pack' ) ), 400 );
 		}
+		if ( ! in_array( $room_type, self::ROOM_TYPES, true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Please choose a room type.', 'travel-pack' ) ), 400 );
+		}
 		if ( $seats < 1 ) {
-			wp_send_json_error( array( 'message' => __( 'Please choose at least one seat.', 'travel-pack' ) ), 400 );
+			wp_send_json_error( array( 'message' => __( 'Please choose at least one traveler.', 'travel-pack' ) ), 400 );
 		}
 
 		$dep = Travel_Pack_Departures::get_departure( $package_id, $departure_id );
@@ -217,14 +296,13 @@ class Travel_Pack_Booking {
 				'package_id'     => $package_id,
 				'departure_id'   => $departure_id,
 				'seats'          => $seats,
+				'room_type'      => $room_type,
 				'customer_name'  => $name,
 				'customer_email' => $email,
-				'customer_phone' => $phone,
-				'message'        => $message,
 				'status'         => 'confirmed',
 				'created_at'     => current_time( 'mysql' ),
 			),
-			array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s' )
 		);
 
 		if ( ! $inserted ) {
@@ -304,15 +382,16 @@ class Travel_Pack_Booking {
 						<th><?php esc_html_e( 'Booked', 'travel-pack' ); ?></th>
 						<th><?php esc_html_e( 'Package', 'travel-pack' ); ?></th>
 						<th><?php esc_html_e( 'Departure', 'travel-pack' ); ?></th>
-						<th><?php esc_html_e( 'Seats', 'travel-pack' ); ?></th>
+						<th><?php esc_html_e( 'Travelers', 'travel-pack' ); ?></th>
+						<th><?php esc_html_e( 'Room', 'travel-pack' ); ?></th>
 						<th><?php esc_html_e( 'Customer', 'travel-pack' ); ?></th>
-						<th><?php esc_html_e( 'Contact', 'travel-pack' ); ?></th>
+						<th><?php esc_html_e( 'Email', 'travel-pack' ); ?></th>
 						<th><?php esc_html_e( 'Status', 'travel-pack' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $rows ) ) : ?>
-						<tr><td colspan="7"><?php esc_html_e( 'No bookings yet.', 'travel-pack' ); ?></td></tr>
+						<tr><td colspan="8"><?php esc_html_e( 'No bookings yet.', 'travel-pack' ); ?></td></tr>
 					<?php else : ?>
 						<?php foreach ( $rows as $row ) :
 							$dep     = Travel_Pack_Departures::get_departure( $row->package_id, $row->departure_id );
@@ -327,13 +406,9 @@ class Travel_Pack_Booking {
 								</td>
 								<td><?php echo esc_html( $dep_str ); ?></td>
 								<td><?php echo (int) $row->seats; ?></td>
+								<td><?php echo esc_html( $row->room_type ); ?></td>
 								<td><?php echo esc_html( $row->customer_name ); ?></td>
-								<td>
-									<a href="mailto:<?php echo esc_attr( $row->customer_email ); ?>"><?php echo esc_html( $row->customer_email ); ?></a>
-									<?php if ( $row->customer_phone ) : ?>
-										<br /><?php echo esc_html( $row->customer_phone ); ?>
-									<?php endif; ?>
-								</td>
+								<td><a href="mailto:<?php echo esc_attr( $row->customer_email ); ?>"><?php echo esc_html( $row->customer_email ); ?></a></td>
 								<td><span class="travel-pack-badge travel-pack-badge--<?php echo esc_attr( $row->status ); ?>"><?php echo esc_html( ucfirst( $row->status ) ); ?></span></td>
 							</tr>
 						<?php endforeach; ?>

@@ -44,6 +44,7 @@ class Travel_Pack_Departures {
 				foreach ( $departures as $dep ) :
 					$booked    = self::get_booked_seats( $post->ID, $dep['id'] );
 					$remaining = max( 0, (int) $dep['seats'] - $booked );
+					$price     = isset( $dep['price'] ) ? $dep['price'] : '';
 					?>
 					<div class="travel-pack-repeater__item travel-pack-departure">
 						<button type="button" class="travel-pack-repeater__remove" aria-label="<?php esc_attr_e( 'Remove departure', 'travel-pack' ); ?>">×</button>
@@ -56,6 +57,10 @@ class Travel_Pack_Departures {
 							<div class="travel-pack-departure__field">
 								<label><?php esc_html_e( 'Total Seats', 'travel-pack' ); ?></label>
 								<input type="number" min="0" step="1" name="travel_pack_departure_seats[]" value="<?php echo esc_attr( $dep['seats'] ); ?>" />
+							</div>
+							<div class="travel-pack-departure__field">
+								<label><?php esc_html_e( 'Price / Person', 'travel-pack' ); ?></label>
+								<input type="text" name="travel_pack_departure_price[]" value="<?php echo esc_attr( $price ); ?>" placeholder="<?php esc_attr_e( 'e.g. $1,499 (optional)', 'travel-pack' ); ?>" />
 							</div>
 							<div class="travel-pack-departure__field travel-pack-departure__status">
 								<label><?php esc_html_e( 'Status', 'travel-pack' ); ?></label>
@@ -99,9 +104,10 @@ class Travel_Pack_Departures {
 			return;
 		}
 
-		$ids   = isset( $_POST['travel_pack_departure_id'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_id'] ) : array();
-		$dates = isset( $_POST['travel_pack_departure_date'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_date'] ) : array();
-		$seats = isset( $_POST['travel_pack_departure_seats'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_seats'] ) : array();
+		$ids    = isset( $_POST['travel_pack_departure_id'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_id'] ) : array();
+		$dates  = isset( $_POST['travel_pack_departure_date'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_date'] ) : array();
+		$seats  = isset( $_POST['travel_pack_departure_seats'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_seats'] ) : array();
+		$prices = isset( $_POST['travel_pack_departure_price'] ) ? (array) wp_unslash( $_POST['travel_pack_departure_price'] ) : array();
 
 		$departures = array();
 		foreach ( $dates as $i => $date ) {
@@ -116,6 +122,7 @@ class Travel_Pack_Departures {
 				'id'    => $id,
 				'date'  => $date,
 				'seats' => isset( $seats[ $i ] ) ? max( 0, (int) $seats[ $i ] ) : 0,
+				'price' => isset( $prices[ $i ] ) ? sanitize_text_field( $prices[ $i ] ) : '',
 			);
 		}
 

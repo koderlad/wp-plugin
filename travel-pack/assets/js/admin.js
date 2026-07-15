@@ -114,6 +114,10 @@
 						'<label>Total Seats</label>' +
 						'<input type="number" min="0" step="1" name="travel_pack_departure_seats[]" value="10" />' +
 					'</div>' +
+					'<div class="travel-pack-departure__field">' +
+						'<label>Price / Person</label>' +
+						'<input type="text" name="travel_pack_departure_price[]" placeholder="e.g. $1,499 (optional)" />' +
+					'</div>' +
 					'<div class="travel-pack-departure__field travel-pack-departure__status">' +
 						'<label>Status</label>' +
 						'<span class="travel-pack-badge travel-pack-badge--ok">New — save to activate</span>' +
