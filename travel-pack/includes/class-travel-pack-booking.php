@@ -270,11 +270,16 @@ class Travel_Pack_Booking {
 
 		$wpdb->query( 'START TRANSACTION' );
 
+		// Use the canonical stored departure_id (case as stored in meta) for the
+		// booking row + the FOR UPDATE query, and match with LOWER() to absorb any
+		// historic case-mismatch between meta and existing bookings.
+		$canonical_departure_id = $dep['id'];
+
 		$already_booked = (int) $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COALESCE(SUM(seats),0) FROM {$table} WHERE package_id = %d AND departure_id = %s AND status = 'confirmed' FOR UPDATE",
+				"SELECT COALESCE(SUM(seats),0) FROM {$table} WHERE package_id = %d AND LOWER(departure_id) = LOWER(%s) AND status = 'confirmed' FOR UPDATE",
 				$package_id,
-				$departure_id
+				$canonical_departure_id
 			)
 		);
 		$remaining = max( 0, (int) $dep['seats'] - $already_booked );
@@ -298,7 +303,7 @@ class Travel_Pack_Booking {
 			$table,
 			array(
 				'package_id'     => $package_id,
-				'departure_id'   => $departure_id,
+				'departure_id'   => $canonical_departure_id,
 				'seats'          => $seats,
 				'room_type'      => $room_type,
 				'customer_name'  => $name,

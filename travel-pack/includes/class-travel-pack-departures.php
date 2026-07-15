@@ -151,8 +151,11 @@ class Travel_Pack_Departures {
 	}
 
 	public static function get_departure( $post_id, $departure_id ) {
+		// Case-insensitive: legacy departures may have been generated mixed-case,
+		// but sanitize_key on the AJAX handler lowercases whatever comes in.
+		$target = strtolower( (string) $departure_id );
 		foreach ( self::get_departures( $post_id ) as $dep ) {
-			if ( $dep['id'] === $departure_id ) {
+			if ( strtolower( (string) $dep['id'] ) === $target ) {
 				return $dep;
 			}
 		}
@@ -162,13 +165,15 @@ class Travel_Pack_Departures {
 	/**
 	 * Sums seats already booked against this departure. Only 'confirmed' bookings
 	 * count towards the total; cancelled/failed bookings free up their seats.
+	 * LOWER() on both sides absorbs any historic case-mismatch between departure
+	 * meta and booking rows.
 	 */
 	public static function get_booked_seats( $post_id, $departure_id ) {
 		global $wpdb;
 		$table = Travel_Pack_Booking::table_name();
 		$sum   = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COALESCE(SUM(seats),0) FROM {$table} WHERE package_id = %d AND departure_id = %s AND status = 'confirmed'",
+				"SELECT COALESCE(SUM(seats),0) FROM {$table} WHERE package_id = %d AND LOWER(departure_id) = LOWER(%s) AND status = 'confirmed'",
 				$post_id,
 				$departure_id
 			)
@@ -206,7 +211,10 @@ class Travel_Pack_Departures {
 	}
 
 	private static function generate_id() {
-		return 'd_' . wp_generate_password( 10, false, false );
+		// Lowercase only. wp_generate_password() returns mixed-case alphanumerics,
+		// but sanitize_key() (applied to whatever comes back on POST) lowercases —
+		// generating lowercase up front keeps ID roundtrips stable.
+		return 'd_' . strtolower( wp_generate_password( 10, false, false ) );
 	}
 
 	private static function is_iso_date( $value ) {
