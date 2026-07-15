@@ -13,6 +13,8 @@
 	'use strict';
 
 	document.addEventListener('DOMContentLoaded', function () {
+		bindMonthTabs();
+
 		var modal = document.getElementById('travel-pack-modal');
 		if (!modal) { return; }
 
@@ -29,7 +31,7 @@
 		var toastContainer  = createToastContainer();
 
 		function openModalFor(button) {
-			currentCard = button.closest('.travel-pack-departure-card');
+			currentCard = button.closest('.tp-dates__row');
 
 			var remaining = parseInt(button.dataset.remaining, 10);
 			if (isNaN(remaining) || remaining < 0) { remaining = 0; }
@@ -170,42 +172,68 @@
 		});
 
 		/**
-		 * Updates the departure card the user just booked so the availability badge,
-		 * Join Now button, and any relevant state reflects the new capacity without
-		 * a page reload.
+		 * Updates the row the user just booked so the availability bar, label, and
+		 * CTA reflect the new capacity without a page reload.
 		 */
-		function updateCard(card, remaining, isFull) {
-			if (!card) { return; }
+		function updateCard(row, remaining, isFull) {
+			if (!row) { return; }
 
-			var cta   = card.querySelector('.travel-pack-departure-card__cta');
-			var badge = card.querySelector('.travel-pack-avail');
+			var avail = row.querySelector('.tp-avail');
+			var bar   = row.querySelector('.tp-avail__bar');
+			var label = row.querySelector('.tp-avail__label');
+			var cta   = row.querySelector('.tp-dates__cta');
+			var total = cta ? parseInt(cta.dataset.total, 10) : 0;
 
-			card.classList.remove('travel-pack-departure-card--ok', 'travel-pack-departure-card--low', 'travel-pack-departure-card--full');
-			if (badge) {
-				badge.classList.remove('travel-pack-avail--ok', 'travel-pack-avail--low', 'travel-pack-avail--full');
+			if (avail) {
+				avail.classList.remove('tp-avail--ok', 'tp-avail--low', 'tp-avail--full');
 			}
 
 			if (isFull) {
-				card.classList.add('travel-pack-departure-card--full');
-				if (badge) {
-					badge.classList.add('travel-pack-avail--full');
-					badge.textContent = 'Full';
-				}
+				if (avail) { avail.classList.add('tp-avail--full'); }
+				if (bar)   { bar.style.width = '100%'; }
+				if (label) { label.textContent = 'FULL'; }
 				if (cta) {
 					cta.disabled = true;
 					cta.textContent = 'Sold Out';
+					cta.classList.add('is-disabled');
 				}
 			} else {
 				var state = remaining <= 3 ? 'low' : 'ok';
-				card.classList.add('travel-pack-departure-card--' + state);
-				if (badge) {
-					badge.classList.add('travel-pack-avail--' + state);
-					badge.textContent = remaining + ' Left';
+				if (avail) { avail.classList.add('tp-avail--' + state); }
+				if (bar && total > 0) {
+					var pct = Math.max(8, Math.min(100, Math.round(remaining / total * 100)));
+					bar.style.width = pct + '%';
 				}
-				if (cta) {
-					cta.dataset.remaining = remaining;
-				}
+				if (label) { label.textContent = remaining + ' LEFT'; }
+				if (cta)   { cta.dataset.remaining = remaining; }
 			}
+		}
+
+		/**
+		 * Wires the month tabs above the Dates & Prices table.
+		 */
+		function bindMonthTabs() {
+			var section = document.getElementById('travel-pack-departures');
+			if (!section) { return; }
+			var tabs   = section.querySelectorAll('.tp-dates__tab');
+			var panels = section.querySelectorAll('.tp-dates__panel');
+			if (!tabs.length) { return; }
+			tabs.forEach(function (tab) {
+				tab.addEventListener('click', function () {
+					var month = tab.dataset.tpMonth;
+					tabs.forEach(function (t) {
+						var active = (t === tab);
+						t.classList.toggle('is-active', active);
+						t.setAttribute('aria-selected', active ? 'true' : 'false');
+					});
+					panels.forEach(function (p) {
+						var active = (p.dataset.tpMonth === month);
+						p.classList.toggle('is-active', active);
+						if (active) { p.removeAttribute('hidden'); }
+						else        { p.setAttribute('hidden', ''); }
+					});
+				});
+			});
 		}
 
 		/* --- Toast --- */

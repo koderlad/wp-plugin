@@ -80,68 +80,167 @@ class Travel_Pack_Booking {
 	private static function render_departures_list( $post_id ) {
 		$departures    = Travel_Pack_Departures::get_upcoming_with_availability( $post_id );
 		$package_price = get_post_meta( $post_id, Travel_Pack_Metaboxes::META_PRICE, true );
-		?>
-		<section class="travel-pack-section travel-pack-departures-list" id="travel-pack-departures">
-			<h2><?php esc_html_e( 'Available Departures', 'travel-pack' ); ?></h2>
+		$duration_days = self::get_package_duration_days( $post_id );
 
-			<?php if ( empty( $departures ) ) : ?>
-				<p class="travel-pack-departures-list__empty">
+		// Group upcoming departures by YYYY-MM so each month becomes a tab + panel.
+		$by_month = array();
+		foreach ( $departures as $dep ) {
+			$ym = substr( $dep['date'], 0, 7 );
+			if ( ! isset( $by_month[ $ym ] ) ) {
+				$by_month[ $ym ] = array();
+			}
+			$by_month[ $ym ][] = $dep;
+		}
+		ksort( $by_month );
+
+		$first_month = $by_month ? array_key_first( $by_month ) : '';
+		?>
+		<section class="tp-dates" id="travel-pack-departures">
+			<p class="tp-dates__eyebrow"><?php esc_html_e( 'Available Departures', 'travel-pack' ); ?></p>
+			<h2 class="tp-dates__title"><?php esc_html_e( 'Dates & Prices', 'travel-pack' ); ?></h2>
+			<p class="tp-dates__lead">
+				<?php esc_html_e( 'Select a month to view upcoming departures.', 'travel-pack' ); ?>
+			</p>
+
+			<?php if ( empty( $by_month ) ) : ?>
+				<p class="tp-dates__empty">
 					<?php esc_html_e( 'No upcoming departures are open for booking. Please check back later.', 'travel-pack' ); ?>
 				</p>
 			<?php else : ?>
-				<ul class="travel-pack-departures-list__items">
-					<?php foreach ( $departures as $dep ) :
-						$price = ! empty( $dep['price'] ) ? $dep['price'] : $package_price;
-						$avail = self::availability_state( $dep );
+				<div class="tp-dates__tabs" role="tablist">
+					<?php foreach ( $by_month as $ym => $_ ) :
+						$is_active = ( $ym === $first_month );
+						$ts        = strtotime( $ym . '-01' );
 						?>
-						<li class="travel-pack-departure-card travel-pack-departure-card--<?php echo esc_attr( $avail['state'] ); ?>">
-							<div class="travel-pack-departure-card__date">
-								<span class="travel-pack-departure-card__weekday">
-									<?php echo esc_html( mysql2date( 'D', $dep['date'] ) ); ?>
-								</span>
-								<span class="travel-pack-departure-card__day">
-									<?php echo esc_html( mysql2date( 'j', $dep['date'] ) ); ?>
-								</span>
-								<span class="travel-pack-departure-card__monthyear">
-									<?php echo esc_html( mysql2date( 'M Y', $dep['date'] ) ); ?>
-								</span>
-							</div>
-
-							<div class="travel-pack-departure-card__meta">
-								<div class="travel-pack-departure-card__price">
-									<?php if ( '' !== trim( (string) $price ) ) : ?>
-										<span class="travel-pack-departure-card__price-label"><?php esc_html_e( 'From', 'travel-pack' ); ?></span>
-										<span class="travel-pack-departure-card__price-value"><?php echo esc_html( $price ); ?></span>
-										<span class="travel-pack-departure-card__price-unit"><?php esc_html_e( '/ person', 'travel-pack' ); ?></span>
-									<?php endif; ?>
-								</div>
-								<div class="travel-pack-departure-card__availability">
-									<span class="travel-pack-avail travel-pack-avail--<?php echo esc_attr( $avail['state'] ); ?>">
-										<?php echo esc_html( $avail['label'] ); ?>
-									</span>
-								</div>
-							</div>
-
-							<div class="travel-pack-departure-card__action">
-								<button
-									type="button"
-									class="travel-pack-departure-card__cta"
-									data-tp-open
-									data-departure-id="<?php echo esc_attr( $dep['id'] ); ?>"
-									data-date="<?php echo esc_attr( mysql2date( get_option( 'date_format' ), $dep['date'] ) ); ?>"
-									data-price="<?php echo esc_attr( $price ); ?>"
-									data-remaining="<?php echo esc_attr( $dep['remaining'] ); ?>"
-									<?php disabled( $dep['is_full'] ); ?>
-								>
-									<?php echo esc_html( $dep['is_full'] ? __( 'Sold Out', 'travel-pack' ) : __( 'Join Now', 'travel-pack' ) ); ?>
-								</button>
-							</div>
-						</li>
+						<button
+							type="button"
+							role="tab"
+							class="tp-dates__tab<?php echo $is_active ? ' is-active' : ''; ?>"
+							data-tp-month="<?php echo esc_attr( $ym ); ?>"
+							aria-selected="<?php echo $is_active ? 'true' : 'false'; ?>"
+							aria-controls="tp-dates-panel-<?php echo esc_attr( $ym ); ?>"
+						>
+							<?php echo esc_html( date_i18n( "M 'y", $ts ) ); ?>
+						</button>
 					<?php endforeach; ?>
-				</ul>
+				</div>
+
+				<div class="tp-dates__table" role="table">
+					<div class="tp-dates__head" role="row">
+						<div class="tp-dates__col-date"><?php esc_html_e( 'Start Date', 'travel-pack' ); ?></div>
+						<div class="tp-dates__col-duration"><?php esc_html_e( 'Duration', 'travel-pack' ); ?></div>
+						<div class="tp-dates__col-avail"><?php esc_html_e( 'Availability', 'travel-pack' ); ?></div>
+						<div class="tp-dates__col-price"><?php esc_html_e( 'Price / Person', 'travel-pack' ); ?></div>
+						<div class="tp-dates__col-cta" aria-hidden="true"></div>
+					</div>
+
+					<?php foreach ( $by_month as $ym => $deps ) :
+						$is_active = ( $ym === $first_month );
+						?>
+						<div
+							class="tp-dates__panel<?php echo $is_active ? ' is-active' : ''; ?>"
+							id="tp-dates-panel-<?php echo esc_attr( $ym ); ?>"
+							data-tp-month="<?php echo esc_attr( $ym ); ?>"
+							role="tabpanel"
+							<?php echo $is_active ? '' : 'hidden'; ?>
+						>
+							<?php foreach ( $deps as $dep ) :
+								$price      = ! empty( $dep['price'] ) ? $dep['price'] : $package_price;
+								$avail      = self::availability_state( $dep );
+								$start_ts   = strtotime( $dep['date'] );
+								$end_ts     = $duration_days > 0 ? strtotime( '+' . ( $duration_days - 1 ) . ' days', $start_ts ) : 0;
+								$start_str  = date_i18n( 'j M Y', $start_ts );
+								$end_str    = $end_ts ? date_i18n( 'j M Y', $end_ts ) : '';
+								?>
+								<div class="tp-dates__row" role="row">
+									<div class="tp-dates__cell tp-dates__cell--date">
+										<strong class="tp-dates__date-start"><?php echo esc_html( $start_str ); ?></strong>
+										<?php if ( $end_str ) : ?>
+											<span class="tp-dates__date-end">&rarr; <?php echo esc_html( $end_str ); ?></span>
+										<?php endif; ?>
+									</div>
+
+									<div class="tp-dates__cell tp-dates__cell--duration">
+										<?php if ( $duration_days > 0 ) : ?>
+											<strong class="tp-dates__dur-days">
+												<?php
+												printf(
+													/* translators: %d days */
+													esc_html( _n( '%d Day', '%d Days', $duration_days, 'travel-pack' ) ),
+													(int) $duration_days
+												);
+												?>
+											</strong>
+											<?php if ( $duration_days > 1 ) : ?>
+												<span class="tp-dates__dur-nights">
+													<?php
+													$nights = $duration_days - 1;
+													printf(
+														/* translators: %d nights */
+														esc_html( _n( '%d Night', '%d Nights', $nights, 'travel-pack' ) ),
+														(int) $nights
+													);
+													?>
+												</span>
+											<?php endif; ?>
+										<?php else : ?>
+											<span class="tp-dates__dur-days">—</span>
+										<?php endif; ?>
+									</div>
+
+									<div class="tp-dates__cell tp-dates__cell--avail">
+										<div class="tp-avail tp-avail--<?php echo esc_attr( $avail['state'] ); ?>">
+											<div class="tp-avail__track">
+												<div class="tp-avail__bar" style="width: <?php echo esc_attr( $avail['fill'] ); ?>%;"></div>
+											</div>
+											<span class="tp-avail__label"><?php echo esc_html( $avail['label'] ); ?></span>
+										</div>
+									</div>
+
+									<div class="tp-dates__cell tp-dates__cell--price">
+										<?php if ( '' !== trim( (string) $price ) ) : ?>
+											<strong class="tp-dates__price-value"><?php echo esc_html( $price ); ?></strong>
+											<span class="tp-dates__price-label"><?php esc_html_e( 'per person', 'travel-pack' ); ?></span>
+										<?php else : ?>
+											<strong class="tp-dates__price-value">—</strong>
+										<?php endif; ?>
+									</div>
+
+									<div class="tp-dates__cell tp-dates__cell--cta">
+										<button
+											type="button"
+											class="tp-dates__cta<?php echo $dep['is_full'] ? ' is-disabled' : ''; ?>"
+											data-tp-open
+											data-departure-id="<?php echo esc_attr( $dep['id'] ); ?>"
+											data-date="<?php echo esc_attr( $start_str ); ?>"
+											data-price="<?php echo esc_attr( $price ); ?>"
+											data-remaining="<?php echo esc_attr( $dep['remaining'] ); ?>"
+											data-total="<?php echo esc_attr( $dep['seats'] ); ?>"
+											<?php disabled( $dep['is_full'] ); ?>
+										>
+											<?php echo esc_html( $dep['is_full'] ? __( 'Sold Out', 'travel-pack' ) : __( 'Join Now', 'travel-pack' ) ); ?>
+										</button>
+									</div>
+								</div>
+							<?php endforeach; ?>
+						</div>
+					<?php endforeach; ?>
+				</div>
 			<?php endif; ?>
 		</section>
 		<?php
+	}
+
+	/**
+	 * Package duration in days, summed from the itinerary. Every itinerary entry
+	 * carries a days count (default 1), so total days = sum of those counts.
+	 */
+	private static function get_package_duration_days( $post_id ) {
+		$total = 0;
+		foreach ( Travel_Pack_Metaboxes::get_itinerary_with_labels( $post_id ) as $item ) {
+			$total += (int) $item['days'];
+		}
+		return $total;
 	}
 
 	private static function render_booking_modal( $post_id ) {
@@ -215,19 +314,28 @@ class Travel_Pack_Booking {
 
 	/**
 	 * Turns a departure's remaining/is_full into a display state for the frontend list.
+	 * Fill is a 0-100 percentage for the availability bar: 100 when the trip is full
+	 * (bar solidly red across); otherwise proportional to remaining seats.
 	 *
-	 * @return array{state:string,label:string}
+	 * @return array{state:string,label:string,fill:int}
 	 */
 	private static function availability_state( $dep ) {
 		if ( $dep['is_full'] ) {
-			return array( 'state' => 'full', 'label' => __( 'Full', 'travel-pack' ) );
+			return array(
+				'state' => 'full',
+				'label' => __( 'FULL', 'travel-pack' ),
+				'fill'  => 100,
+			);
 		}
 		$remaining = (int) $dep['remaining'];
+		$total     = max( 1, (int) $dep['seats'] );
+		$fill      = (int) round( min( 100, max( 8, $remaining / $total * 100 ) ) );
 		$state     = $remaining <= 3 ? 'low' : 'ok';
 		return array(
 			'state' => $state,
 			/* translators: %d seats remaining */
-			'label' => sprintf( _n( '%d Left', '%d Left', $remaining, 'travel-pack' ), $remaining ),
+			'label' => sprintf( _n( '%d LEFT', '%d LEFT', $remaining, 'travel-pack' ), $remaining ),
+			'fill'  => $fill,
 		);
 	}
 
