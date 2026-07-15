@@ -510,62 +510,74 @@ body.travel-pack-modal-open { overflow: hidden; }
 	color: #b32d2e;
 }
 
-/* --- Toasts (shown after the modal closes on a successful booking) --- */
+/* --- Toasts (shown after the modal closes on a successful booking) ---
+ * The container is centered horizontally at the top of the viewport and
+ * individual toasts slide down into it. Success toasts are solid green so
+ * the confirmation is unmistakable at a glance.
+ */
 .travel-pack-toasts {
 	position: fixed;
 	top: 20px;
-	right: 20px;
+	left: 50%;
+	transform: translateX(-50%);
 	z-index: 100001;
 	display: flex;
 	flex-direction: column;
+	align-items: center;
 	gap: 10px;
 	max-width: calc(100vw - 40px);
 	pointer-events: none;
 }
 .travel-pack-toast {
 	background: #fff;
-	border-left: 4px solid #007017;
-	border-radius: 6px;
-	padding: 12px 40px 12px 16px;
-	box-shadow: 0 8px 24px rgba(0,0,0,.15);
+	border-radius: 8px;
+	padding: 14px 44px 14px 18px;
+	box-shadow: 0 12px 32px rgba(0,0,0,.18);
 	color: #1d2327;
 	font-size: 14px;
 	line-height: 1.5;
-	min-width: 260px;
-	max-width: 380px;
+	min-width: 280px;
+	max-width: 440px;
 	position: relative;
 	pointer-events: auto;
 	animation: tpToastIn .22s ease-out;
 }
-.travel-pack-toast--success { border-left-color: #007017; }
-.travel-pack-toast--error   { border-left-color: #b32d2e; }
+.travel-pack-toast--success {
+	background: #1a8917;
+	color: #fff;
+}
+.travel-pack-toast--error {
+	background: #b32d2e;
+	color: #fff;
+}
 .travel-pack-toast__title {
 	font-weight: 700;
 	display: block;
 	margin-bottom: 2px;
 }
-.travel-pack-toast--success .travel-pack-toast__title { color: #007017; }
-.travel-pack-toast--error   .travel-pack-toast__title { color: #b32d2e; }
+.travel-pack-toast--success .travel-pack-toast__title,
+.travel-pack-toast--error   .travel-pack-toast__title { color: #fff; }
 .travel-pack-toast__close {
 	position: absolute;
-	top: 6px;
-	right: 6px;
+	top: 8px;
+	right: 8px;
 	background: transparent;
 	border: 0;
-	color: #646970;
+	color: inherit;
+	opacity: .85;
 	font-size: 20px;
 	line-height: 1;
 	cursor: pointer;
 	padding: 4px 8px;
 	border-radius: 4px;
 }
-.travel-pack-toast__close:hover { background: #f0f0f1; color: #1d2327; }
+.travel-pack-toast__close:hover { background: rgba(255,255,255,.18); opacity: 1; }
 .travel-pack-toast.is-leaving { animation: tpToastOut .18s ease-in forwards; }
 
-@keyframes tpToastIn  { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
-@keyframes tpToastOut { from { opacity: 1; } to { opacity: 0; transform: translateX(20px); } }
+@keyframes tpToastIn  { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: none; } }
+@keyframes tpToastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-30px); } }
 
 @media (max-width: 480px) {
-	.travel-pack-toasts { left: 20px; right: 20px; }
-	.travel-pack-toast { max-width: none; }
+	.travel-pack-toasts { width: calc(100vw - 40px); }
+	.travel-pack-toast { min-width: 0; width: 100%; max-width: none; }
 }
